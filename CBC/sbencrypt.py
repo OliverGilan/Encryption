@@ -69,9 +69,14 @@ with open(plaintext, "rb") as pt:
         lastkeybyte = iv[-1]
         # iv = bytearray(iv, encoding="utf8")
         while True:
-            print("")
+            if debug == 1:
+                print("")
             # Read 16 blocks from input file
-            block = pt.read(16)
+            if size == 0 and padded == False:
+                block = [16] * 16
+                padded = True
+            else:
+                block = pt.read(16)
             size = size - 16
             # If EOF, quit
             if not block:

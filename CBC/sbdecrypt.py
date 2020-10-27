@@ -4,6 +4,7 @@ import os.path
 import sys
 import binascii
 import itertools
+import copy
 
 
 def get_16_bytes(seed, depth):
@@ -50,7 +51,6 @@ else:
 
 seed = hash_password(password)
 lastkeybyte = seed
-padded = False
 
 if debug == 1:
     print(
@@ -59,81 +59,81 @@ if debug == 1:
         )
     )
 print("using seed={} from password={}".format(seed, password))
-
-with open(plaintext, "r") as pt:
+with open(plaintext, "rb") as pt:
     with open(ciphertext, "wb+") as ct:
+        # File size
+        size = os.path.getsize(plaintext)
         # Create Initialization Vector with 16 bytes
         iv = [get_next_key_byte(seed)]
         for i in range(16):
             iv.append(get_next_key_byte(iv[-1]))
         lastkeybyte = iv[-1]
+
         # iv = bytearray(iv, encoding="utf8")
         while True:
-            print("")
-            # Read 16 blocks from input file
-            block = pt.read(16)
-            # If EOF, quit
-            if not block:
+            if debug == 1:
+                print("")
+            cipherblock = bytearray(pt.read(16))
+            if len(cipherblock) == 0:
                 break
-            blockbytes = bytearray(block, encoding="utf8")
+            size = size - 16
+            prev = copy.deepcopy(cipherblock)
 
-            # Add Padding
-            if len(blockbytes) < 16:
-                diff = 16 - len(blockbytes)
-                blockbytes.extend(itertools.repeat(diff, diff))
-                padded = True
-
-            # XOR with previous cipherblock or IV
-            temp = []
+            # Read 16 bytes from stream
+            stream = [lastkeybyte]
             for i in range(16):
-                temp.append(blockbytes[i] ^ iv[i])
+                stream.append(get_next_key_byte(stream[-1]))
+                lastkeybyte = stream[-1]
+
+            for i in range(16):
+                cipherblock[i] = cipherblock[i] ^ stream[i]
 
             if debug == 1:
                 print(
-                    "before shuffle: {}".format(list(map(lambda x: hex(x)[2:], temp)))
+                    "encrypted block before shuffle: {}".format(
+                        list(map(lambda x: hex(x)[2:], prev))
+                    )
+                )
+                print(
+                    "after xor with keystream: {} - scrambled".format(
+                        list(map(lambda x: hex(x)[2:], cipherblock))
+                    )
                 )
 
-            # Read 16 bytes of keystream
-            keybyte = lastkeybyte
-            stream = [keybyte]
-            # Swap 16 pairs of bytes and read bytes from keystream
-            for i in range(16):
+            # Shuffle bytes
+            for i in reversed(range(16)):
+                keybyte = stream[i]
                 first = keybyte & 0xF
                 second = (keybyte >> 4) & 0xF
-                swapped = temp[first]
-                temp[first] = temp[second]
-                temp[second] = swapped
-                keybyte = get_next_key_byte(keybyte)
-                lastkeybyte = keybyte
-                stream.append(keybyte)
+                swapped = cipherblock[first]
+                cipherblock[first] = cipherblock[second]
+                cipherblock[second] = swapped
                 if debug == 1:
                     print(
                         "{}: swapping ({}, {}) = [{} <> {}]".format(
                             i,
                             first,
                             second,
-                            hex(temp[second])[2:],
-                            hex(temp[first])[2:],
+                            hex(cipherblock[second])[2:],
+                            hex(cipherblock[first])[2:],
                         )
                     )
 
             if debug == 1:
-                print("after shuffle: {}".format(list(map(lambda x: hex(x)[2:], temp))))
-
-            # Create cipherblock
-            cipherblock = []
-            for i in range(16):
-                cipherblock.append(temp[i] ^ stream[i])
-
-            if debug == 1:
                 print(
-                    "after xor with keystream: {}".format(
+                    "plaintext?: {}".format(
                         list(map(lambda x: hex(x)[2:], cipherblock))
                     )
                 )
 
-            # Write ciphertext
-            ct.write(bytearray(int(i) for i in cipherblock))
+            for i in range(16):
+                cipherblock[i] = cipherblock[i] ^ iv[i]
 
-            # Set initialization vector to current cipherblock
-            iv = cipherblock
+            if size == 0:
+                diff = 16 - cipherblock[-1]
+                if diff == 0:
+                    break
+                cipherblock = cipherblock[:diff]
+
+            ct.write(bytearray(int(i) for i in cipherblock))
+            iv = prev
