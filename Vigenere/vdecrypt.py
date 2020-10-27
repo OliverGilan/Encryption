@@ -55,7 +55,10 @@ with open(plaintext, "rb") as pt:
                 break
             pbyte = ord(pbyte)
             c = ord(key[keyindex])
-            encrypted = (pbyte + c) % 256
+            # encrypted = (pbyte + c) % 256
+            encrypted = pbyte - c
+            if encrypted < 0:
+                encrypted = encrypted + 256
             # print(encrypted)
             # print(chr(encrypted))
             if debug == 1:
